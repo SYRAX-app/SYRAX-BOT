@@ -800,7 +800,127 @@ async def on_text(message: Message):
     await message.answer(t(user["lang"], "welcome"), reply_markup=kb_main(user["lang"]))
 
 
-# Admin: /setreg /setdep /setbalance
+# ---------- Admin panel ----------
+def kb_admin() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📊 Statistika", callback_data="adm:stats")],
+            [InlineKeyboardButton(text="👤 User tekshirish", callback_data="adm:user")],
+            [
+                InlineKeyboardButton(text="✅ Set REG", callback_data="adm:setreg"),
+                InlineKeyboardButton(text="💰 Set DEP", callback_data="adm:setdep"),
+            ],
+            [
+                InlineKeyboardButton(text="🔄 Reset DEP", callback_data="adm:resetdep"),
+                InlineKeyboardButton(text="🗑 Reset USER", callback_data="adm:resetuser"),
+            ],
+            [InlineKeyboardButton(text="⬅️ Yopish", callback_data="adm:close")],
+        ]
+    )
+
+
+@router.message(Command("admin"))
+async def admin_panel(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    await message.answer(
+        "🛠 <b>Admin panel</b>\n\n"
+        "Buyruqlar:\n"
+        "/setreg &lt;tg_id&gt; — faqat registratsiya\n"
+        "/setdep &lt;tg_id&gt; — reg + depozit + aktiv\n"
+        "/resetdep &lt;tg_id&gt; — depozitni 0 qilish\n"
+        "/resetuser &lt;tg_id&gt; — to‘liq tozalash\n"
+        "/setbalance &lt;tg_id&gt; 0|1 — balans\n"
+        "/user &lt;tg_id&gt; — user ma’lumoti\n"
+        "/stats — statistika",
+        reply_markup=kb_admin(),
+    )
+
+
+@router.callback_query(F.data.startswith("adm:"))
+async def on_admin_cb(cq: CallbackQuery):
+    if cq.from_user.id not in ADMIN_IDS:
+        await cq.answer("Ruxsat yo‘q", show_alert=True)
+        return
+    action = cq.data.split(":")[1]
+    if action == "close":
+        await cq.message.delete()
+        await cq.answer()
+        return
+    if action == "stats":
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute("SELECT COUNT(*) FROM users")
+            total = (await cur.fetchone())[0]
+            cur = await db.execute("SELECT COUNT(*) FROM users WHERE registered=1")
+            regs = (await cur.fetchone())[0]
+            cur = await db.execute("SELECT COUNT(*) FROM users WHERE deposited=1")
+            deps = (await cur.fetchone())[0]
+            cur = await db.execute("SELECT COUNT(*) FROM users WHERE subscribed=1")
+            subs = (await cur.fetchone())[0]
+        await cq.message.edit_text(
+            f"📊 <b>Statistika</b>\n\n"
+            f"Jami user: <b>{total}</b>\n"
+            f"Obuna: <b>{subs}</b>\n"
+            f"Registratsiya: <b>{regs}</b>\n"
+            f"Depozit: <b>{deps}</b>",
+            reply_markup=kb_admin(),
+        )
+        await cq.answer()
+        return
+    hints = {
+        "user": "Yuboring: /user <tg_id>",
+        "setreg": "Yuboring: /setreg <tg_id>",
+        "setdep": "Yuboring: /setdep <tg_id>",
+        "resetdep": "Yuboring: /resetdep <tg_id>",
+        "resetuser": "Yuboring: /resetuser <tg_id>",
+    }
+    await cq.answer(hints.get(action, "OK"), show_alert=True)
+
+
+@router.message(Command("stats"))
+async def admin_stats(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT COUNT(*) FROM users")
+        total = (await cur.fetchone())[0]
+        cur = await db.execute("SELECT COUNT(*) FROM users WHERE registered=1")
+        regs = (await cur.fetchone())[0]
+        cur = await db.execute("SELECT COUNT(*) FROM users WHERE deposited=1")
+        deps = (await cur.fetchone())[0]
+        cur = await db.execute("SELECT COUNT(*) FROM users WHERE subscribed=1")
+        subs = (await cur.fetchone())[0]
+    await message.answer(
+        f"📊 <b>Statistika</b>\n\n"
+        f"Jami user: <b>{total}</b>\n"
+        f"Obuna: <b>{subs}</b>\n"
+        f"Registratsiya: <b>{regs}</b>\n"
+        f"Depozit: <b>{deps}</b>"
+    )
+
+
+@router.message(Command("user"))
+async def admin_user(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.answer("Usage: /user <tg_id>")
+        return
+    tid = int(parts[1])
+    user = await get_user(tid)
+    await message.answer(
+        f"👤 <b>User {tid}</b>\n\n"
+        f"Lang: {user.get('lang')}\n"
+        f"Subscribed: {user.get('subscribed')}\n"
+        f"Registered: {user.get('registered')}\n"
+        f"Deposited: {user.get('deposited')}\n"
+        f"Balance OK: {user.get('balance_ok')}\n"
+        f"Win ID: {user.get('win_user_id') or '-'}\n"
+        f"Waiting ID: {user.get('waiting_id')}"
+    )
+
+
 @router.message(Command("setreg"))
 async def admin_setreg(message: Message):
     if message.from_user.id not in ADMIN_IDS:
@@ -811,7 +931,7 @@ async def admin_setreg(message: Message):
         return
     tid = int(parts[1])
     await update_user(tid, registered=1)
-    await message.answer(f"registered=1 for {tid}")
+    await message.answer(f"✅ registered=1 for {tid}")
 
 
 @router.message(Command("setdep"))
@@ -824,7 +944,40 @@ async def admin_setdep(message: Message):
         return
     tid = int(parts[1])
     await update_user(tid, registered=1, deposited=1, balance_ok=1)
-    await message.answer(f"deposited=1 for {tid}")
+    await message.answer(f"✅ deposited=1 for {tid}")
+
+
+@router.message(Command("resetdep"))
+async def admin_resetdep(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 2:
+        await message.answer("Usage: /resetdep <tg_id>")
+        return
+    tid = int(parts[1])
+    await update_user(tid, deposited=0, balance_ok=0)
+    await message.answer(f"🔄 deposited=0, balance_ok=0 for {tid}")
+
+
+@router.message(Command("resetuser"))
+async def admin_resetuser(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 2:
+        await message.answer("Usage: /resetuser <tg_id>")
+        return
+    tid = int(parts[1])
+    await update_user(
+        tid,
+        registered=0,
+        deposited=0,
+        balance_ok=1,
+        win_user_id=None,
+        waiting_id=0,
+    )
+    await message.answer(f"🗑 User {tid} tozalandi (reg=0, dep=0)")
 
 
 @router.message(Command("setbalance"))
@@ -874,7 +1027,8 @@ async def postback_handler(request: web.Request) -> web.Response:
             except Exception as e:
                 logger.warning("notify reg failed: %s", e)
 
-        elif event in ("ftd", "first_deposit", "firstdep", "dep", "deposit"):
+        elif event in ("ftd", "first_deposit", "firstdep"):
+            # Faqat birinchi depozit — signal ochiladi
             await update_user(tg_id, registered=1, deposited=1, balance_ok=1, win_user_id=user_id_1win or None)
             try:
                 bot: Bot = request.app["bot"]
@@ -885,7 +1039,26 @@ async def postback_handler(request: web.Request) -> web.Response:
                     reply_markup=kb_open_app(user["lang"]),
                 )
             except Exception as e:
-                logger.warning("notify dep failed: %s", e)
+                logger.warning("notify ftd failed: %s", e)
+
+        elif event in ("dep", "deposit"):
+            # Qayta depozit — faqat deposited=1 qilamiz, lekin xabar yubormaymiz
+            # (agar allaqachon faol bo‘lsa kerak emas)
+            user = await get_user(tg_id)
+            if not user.get("deposited"):
+                await update_user(tg_id, registered=1, deposited=1, balance_ok=1, win_user_id=user_id_1win or None)
+                try:
+                    bot: Bot = request.app["bot"]
+                    user = await get_user(tg_id)
+                    await bot.send_message(
+                        tg_id,
+                        t(user["lang"], "dep_ok"),
+                        reply_markup=kb_open_app(user["lang"]),
+                    )
+                except Exception as e:
+                    logger.warning("notify dep failed: %s", e)
+            else:
+                await update_user(tg_id, balance_ok=1, win_user_id=user_id_1win or None)
 
     return web.Response(text="OK")
 
