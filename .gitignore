@@ -1,0 +1,5 @@
+.env
+syrax.db
+*.db
+*.sqlite
+__pycache__/
