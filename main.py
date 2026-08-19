@@ -139,6 +139,13 @@ T = {
             "🎉 Hisob faollashtirildi!\n\n"
             "Endi signallarni ochishingiz mumkin:"
         ),
+        "open_app_text": (
+            "🎮 <b>Signallar mini-app</b>\n\n"
+            "Pastdagi tugma orqali oching.\n"
+            "Signal olish uchun 1WIN da ro‘yxat + kamida 50$ depozit kerak "
+            "(mini-app ichidagi «Mening hisobim» bo‘limida)."
+        ),
+
         "balance_zero": (
             "⚠️ <b>Balansingiz 0 ga tushgan.</b>\n\n"
             "Shu sababli signallardan foydalana olmaysiz.\n"
@@ -239,6 +246,13 @@ T = {
             "● После депозита нажмите «🔍 Проверить депозит»."
         ),
         "dep_ok": "🎉 Аккаунт активирован!\n\nМожно открыть сигналы:",
+        "open_app_text": (
+            "🎮 <b>Сигналы mini-app</b>\n\n"
+            "Откройте кнопкой ниже.\n"
+            "Для сигнала нужна регистрация 1WIN + депозит от $50 "
+            "(раздел «Мой аккаунт» внутри mini-app)."
+        ),
+
         "balance_zero": (
             "⚠️ <b>Баланс равен 0.</b>\n\n"
             "Поэтому сигналы недоступны.\n"
@@ -339,6 +353,13 @@ T = {
             "● After deposit tap «🔍 Check deposit»."
         ),
         "dep_ok": "🎉 Account activated!\n\nYou can open signals:",
+        "open_app_text": (
+            "🎮 <b>Signals mini-app</b>\n\n"
+            "Open with the button below.\n"
+            "To get signals: register on 1WIN + deposit at least $50 "
+            "(see «My Account» inside the mini-app)."
+        ),
+
         "balance_zero": (
             "⚠️ <b>Your balance is 0.</b>\n\n"
             "Signals are unavailable.\n"
@@ -1116,6 +1137,10 @@ async def on_levels(cq: CallbackQuery):
 
 @router.callback_query(F.data == "signal")
 async def on_signal(cq: CallbackQuery, bot: Bot):
+    """Signal tugmasi — hammaga mini-app ochiladi.
+    Faollashtirish (reg + 50$ dep) mini-app ichida tekshiriladi.
+    Eski faol akkauntlar bazada qoladi, o‘chmaydi.
+    """
     user = await get_user(cq.from_user.id)
     lang = user.get("lang") or "uz"
     tg_id = cq.from_user.id
@@ -1124,25 +1149,14 @@ async def on_signal(cq: CallbackQuery, bot: Bot):
         await safe_screen(cq, t(lang, "need_sub"), kb_sub(lang))
         await cq.answer()
         return
-    if not user.get("registered"):
-        await safe_screen(
-            cq,
-            t(lang, "reg_text", promo=PROMO_CODE, support=SUPPORT_URL),
-            kb_reg(lang, tg_id),
-            PHOTO_REG,
-        )
-        await cq.answer()
-        return
-    if not user.get("deposited"):
-        await safe_screen(cq, dep_need_text(lang), kb_deposit_check(lang, tg_id), PHOTO_DEP)
-        await cq.answer()
-        return
-    if not user.get("balance_ok", 1):
-        await safe_screen(cq, t(lang, "balance_zero"), kb_deposit(lang, tg_id), PHOTO_DEP)
-        await cq.answer()
-        return
-    await safe_screen(cq, t(lang, "dep_ok"), kb_open_app(lang))
+    # Mini-app hammaga ochiq. Signal faqat mini-app ichida (API access) cheklanadi.
+    text = t(lang, "open_app_text")
+    if text == "open_app_text":  # fallback if lang has no key
+        text = t(lang, "dep_ok")
+    await safe_screen(cq, text, kb_open_app(lang))
     await cq.answer()
+
+
 
 
 @router.callback_query(F.data == "link_fail")
